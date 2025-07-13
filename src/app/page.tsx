@@ -38,7 +38,7 @@ export default function GitGrabPage() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      repoUrl: '',
+      repoUrl: 'https://github.com/tamimiqbalfysal/Today-2.1.git',
     },
   });
 
