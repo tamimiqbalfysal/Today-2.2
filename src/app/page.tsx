@@ -1,159 +1,138 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
-import { z } from 'zod';
-import { Github, LoaderCircle, CheckCircle, XCircle } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { collection, query, orderBy, onSnapshot, Timestamp } from "firebase/firestore";
+import { db } from '@/lib/firebase';
+import { useAuth } from '@/contexts/auth-context';
+import type { Post } from '@/lib/types';
+import { useToast } from "@/hooks/use-toast";
 
-import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormMessage,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import { validateRepoUrl } from '@/ai/flows/validate-repo-url';
+import { AuthGuard } from '@/components/auth/auth-guard';
+import { Header } from '@/components/fintrack/header';
+import { PostFeed } from '@/components/fintrack/recent-transactions';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ThinkCodeDialog } from '@/components/fintrack/gift-code-dialog';
 
-const formSchema = z.object({
-  repoUrl: z.string().url({ message: 'Please enter a valid GitHub repository URL.' }),
-});
+function TodaySkeleton() {
+  return (
+    <div className="flex flex-col min-h-screen">
+      <header className="bg-primary p-4 sticky top-0 z-10 shadow-md">
+        <div className="container mx-auto flex items-center justify-between">
+          <Skeleton className="h-10 w-10 rounded-full bg-primary/80" />
+          <div className="flex items-center gap-4">
+            <Skeleton className="h-8 w-32 bg-primary/80" />
+            <Skeleton className="h-10 w-10 rounded-full bg-primary/80" />
+          </div>
+        </div>
+      </header>
+      <main className="container mx-auto p-4 max-w-5xl space-y-6 flex-1">
+          <Skeleton className="h-[450px] w-full" />
+          <Skeleton className="h-[450px] w-full" />
+      </main>
+    </div>
+  );
+}
 
-type Status = 'idle' | 'validating' | 'cloning' | 'success' | 'error';
 
-export default function GitGrabPage() {
-  const [status, setStatus] = useState<Status>('idle');
-  const [message, setMessage] = useState('');
+export default function TodayPage() {
+  const { user, loading: authLoading } = useAuth();
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [isDataLoading, setIsDataLoading] = useState(true);
+  const { toast } = useToast();
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const lastScrollY = useRef(0);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [isThinkCodeDialogOpen, setIsThinkCodeDialogOpen] = useState(false);
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      repoUrl: 'https://github.com/tamimiqbalfysal/Today-2.1.git',
-    },
-  });
+  useEffect(() => {
+    // Don't run on server or if user data is loading.
+    if (typeof window === 'undefined' || authLoading) return;
+    
+    // If user exists and has NOT redeemed a code, show the gift code dialog after a delay.
+    if (user && (user.redeemedThinkCodes || 0) === 0) {
+      const intervalId = setInterval(() => {
+        setIsThinkCodeDialogOpen(true);
+      }, 60000); // 1 minute
 
-  async function onSubmit(values: z.infer<typeof formSchema>) {
-    setStatus('validating');
-    setMessage('');
-
-    try {
-      const result = await validateRepoUrl({ repoUrl: values.repoUrl });
-
-      if (result.isValid) {
-        setStatus('cloning');
-        // Simulate cloning process
-        setTimeout(() => {
-          setStatus('success');
-          setMessage('Repository clone initiated!');
-        }, 2000);
-      } else {
-        setStatus('error');
-        setMessage(result.reason || 'This does not appear to be a valid, public repository.');
-      }
-    } catch (error) {
-      setStatus('error');
-      setMessage('An unexpected error occurred during validation.');
-      console.error(error);
+      // Cleanup function to clear the interval when the component unmounts
+      // or when the user object changes (e.g., after redeeming a code).
+      return () => clearInterval(intervalId);
     }
-  }
+  }, [user, authLoading]);
 
-  const isLoading = status === 'validating' || status === 'cloning';
+  const handleScroll = () => {
+    if (scrollContainerRef.current) {
+      const currentScrollY = scrollContainerRef.current.scrollTop;
 
-  const renderStatusIndicator = () => {
-    if (status === 'idle') return null;
-
-    const statusConfig = {
-      validating: {
-        icon: <LoaderCircle className="h-5 w-5 animate-spin text-muted-foreground" />,
-        text: 'Validating repository...',
-        className: 'text-muted-foreground',
-      },
-      cloning: {
-        icon: <LoaderCircle className="h-5 w-5 animate-spin text-accent" />,
-        text: 'Initiating clone...',
-        className: 'text-foreground',
-      },
-      success: {
-        icon: <CheckCircle className="h-5 w-5 text-success" />,
-        text: message,
-        className: 'text-success',
-      },
-      error: {
-        icon: <XCircle className="h-5 w-5 text-destructive" />,
-        text: message,
-        className: 'text-destructive',
-      },
-    };
-
-    const currentStatusInfo = statusConfig[status];
-    if (!currentStatusInfo) return null;
-
-    return (
-      <div className={`flex items-center gap-2 text-sm ${currentStatusInfo.className}`}>
-        {currentStatusInfo.icon}
-        <p>{currentStatusInfo.text}</p>
-      </div>
-    );
+      if (currentScrollY > lastScrollY.current && currentScrollY > 50) {
+        setIsHeaderVisible(false);
+      } else {
+        setIsHeaderVisible(true);
+      }
+      lastScrollY.current = currentScrollY;
+    }
   };
+
+  useEffect(() => {
+    if (authLoading || !db) return; 
+    
+    if (!user) {
+      setIsDataLoading(false);
+      return;
+    }
+
+    setIsDataLoading(true);
+    const postsCol = collection(db, 'posts');
+    const q = query(postsCol, orderBy("timestamp", "desc"));
+
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const fetchedPosts: Post[] = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data
+        } as Post;
+      });
+      setPosts(fetchedPosts);
+      setIsDataLoading(false);
+    }, (error) => {
+      console.error("Error fetching posts:", error);
+      let description = "Could not load posts.";
+      if (error.code === 'permission-denied') {
+        description = "You don't have permission to view posts. Please check your Firestore security rules in the Firebase Console.";
+      }
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: description,
+      });
+      setIsDataLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [user, authLoading, toast]);
   
-  const buttonContent = () => {
-      if (status === 'validating') return <><LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Validating</>;
-      if (status === 'cloning') return <><LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Cloning</>;
-      return 'Clone Repository';
+  if (authLoading || (isDataLoading && user)) {
+    return <TodaySkeleton />;
   }
 
   return (
-    <main className="flex min-h-screen w-full flex-col items-center justify-center bg-background p-4 font-body">
-      <Card className="w-full max-w-md rounded-2xl border-border/60 shadow-2xl shadow-black/20">
-        <CardHeader className="text-center p-8">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mb-4 border border-primary/20">
-              <Github className="h-8 w-8 text-primary" />
-            </div>
-            <CardTitle className="text-3xl font-bold font-headline">GitGrab</CardTitle>
-            <CardDescription className="text-muted-foreground pt-1">Enter a GitHub URL to start the cloning process.</CardDescription>
-        </CardHeader>
-        <CardContent className="px-8">
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <FormField
-                control={form.control}
-                name="repoUrl"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormControl>
-                      <Input
-                        placeholder="https://github.com/user/repo"
-                        {...field}
-                        className="h-12 text-base text-center"
-                      />
-                    </FormControl>
-                    <FormMessage className="text-center" />
-                  </FormItem>
-                )}
-              />
-              <Button type="submit" className="w-full h-12 text-base font-semibold bg-accent text-accent-foreground hover:bg-accent/90 focus-visible:ring-accent" disabled={isLoading}>
-                {buttonContent()}
-              </Button>
-            </form>
-          </Form>
-        </CardContent>
-        <CardFooter className="flex h-16 items-center justify-center p-8">
-            {renderStatusIndicator()}
-        </CardFooter>
-      </Card>
-      <footer className="py-4 mt-4">
-        <p className="text-xs text-muted-foreground">A minimal utility by Firebase Studio.</p>
-      </footer>
-    </main>
+    <AuthGuard>
+        <div className="flex flex-col h-screen">
+          <Header isVisible={isHeaderVisible} />
+          <main className="container mx-auto max-w-5xl p-4 flex-1 overflow-hidden">
+            <PostFeed 
+              posts={posts} 
+              scrollContainerRef={scrollContainerRef}
+              onScroll={handleScroll}
+            />
+          </main>
+          <ThinkCodeDialog
+            open={isThinkCodeDialogOpen}
+            onOpenChange={setIsThinkCodeDialogOpen}
+            userId={user?.uid}
+          />
+        </div>
+    </AuthGuard>
   );
 }
