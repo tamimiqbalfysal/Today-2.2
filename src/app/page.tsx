@@ -124,15 +124,13 @@ export default function TodayPage() {
           <main 
             ref={scrollContainerRef}
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto"
+            className="flex-1 overflow-y-auto scroll-snap-y-mandatory"
           >
-            <div className="container mx-auto max-w-2xl p-4">
               <PostFeed 
                 posts={posts} 
                 currentUserId={user?.uid}
                 onDeletePost={() => {}}
               />
-            </div>
           </main>
           <ThinkCodeDialog
             open={isThinkCodeDialogOpen}

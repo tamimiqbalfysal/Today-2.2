@@ -32,7 +32,7 @@ function PostCard({ post, currentUserId, onDelete }: PostCardProps) {
 
     return (
         <div 
-            className="bg-card p-6 rounded-2xl w-full shadow-md transition-shadow hover:shadow-lg border-4 border-black relative"
+            className="bg-card p-6 rounded-2xl w-full max-w-2xl mx-auto shadow-md transition-shadow hover:shadow-lg border-4 border-black relative"
         >
             {isAuthor && onDelete && (
                  <AlertDialog>
@@ -118,9 +118,11 @@ export function PostFeed({ posts, currentUserId, onDeletePost }: PostFeedProps) 
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-0">
       {posts.map((post) => (
-          <PostCard key={post.id} post={post} currentUserId={currentUserId} onDelete={onDeletePost} />
+          <div key={post.id} className="h-screen w-full flex items-center justify-center p-4 scroll-snap-start">
+            <PostCard post={post} currentUserId={currentUserId} onDelete={onDeletePost} />
+          </div>
       ))}
     </div>
   );
