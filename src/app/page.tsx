@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -120,12 +121,18 @@ export default function TodayPage() {
     <AuthGuard>
         <div className="flex flex-col h-screen">
           <Header isVisible={isHeaderVisible} />
-          <main className="container mx-auto max-w-5xl p-4 flex-1 overflow-hidden">
-            <PostFeed 
-              posts={posts} 
-              scrollContainerRef={scrollContainerRef}
-              onScroll={handleScroll}
-            />
+          <main 
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto"
+          >
+            <div className="container mx-auto max-w-2xl p-4">
+              <PostFeed 
+                posts={posts} 
+                currentUserId={user?.uid}
+                onDeletePost={() => {}}
+              />
+            </div>
           </main>
           <ThinkCodeDialog
             open={isThinkCodeDialogOpen}
